@@ -9,10 +9,10 @@ import math
 from astar import astar
 import time
 
-z_limit = 2
+z_limit = 1
 node_spacing = 1
-maximum_distance = 2
-minimum_distance = .5
+maximum_distance = 4
+minimum_distance = 2
 
 # Helper function to calculate Euclidean distance between two nodes
 
@@ -50,7 +50,9 @@ def line_of_sight(node1, node2, X, Y, Z):
         # Check if the interpolated Z coordinate is higher than the current Z coordinate
         if z_interp > z:
             return False
-    if distance(node1, node2) < minimum_distance or distance(node1, node2) > maximum_distance:
+    if abs(distance(node1, node2)) <= minimum_distance:
+        return False
+    if abs(distance(node1, node2)) >= maximum_distance:
         return False
 
     return True
@@ -73,7 +75,7 @@ def get_nodes_within_line_of_sight(node, nodes, X, Y, Z, original_path=None):
     return visible_nodes
 
 
-def get_mountain_surface_z(x, y, scale=10, octaves=100, persistence=0.5):
+def get_mountain_surface_z(x, y, scale=6, octaves=100, persistence=0.5):
     return pnoise2(x / scale, y / scale, octaves=octaves, persistence=persistence)
 
 
@@ -90,8 +92,8 @@ for i in range(len(x)):
 
 # Define the colormap for the terrain
 colors = [
-    (0.0, '#197019'),   # Bottoms (green)
-    (1.0, '#d5e8d5')    # Mountains (brown)
+    (0.0, 'green'),   # Bottoms (green)
+    (1.0, 'black')    # Mountains (brown)
 ]
 cmap = LinearSegmentedColormap.from_list('terrain', colors)
 
@@ -107,8 +109,8 @@ if not nodes:
     raise ValueError("No nodes available with the specified spacing.")
 
 # Define start and goal nodes
-start_node = (-8, 8, 2)
-goal_node = (5, -6, 1)
+start_node = (-8, 8, 1)
+goal_node = (7, -6, 1)
 
 # Check if start node falls below the mountain surface
 if start_node[2] < get_mountain_surface_z(start_node[0], start_node[1]):
@@ -203,25 +205,39 @@ def get_neighbors(node, input_nodes):
 try:
     # Run A* algorithm
     path = astar(start_node, goal_node, nodes)
-
     # Get nodes within line of sight of the path
     line_of_sight_nodes = []
     for node in path:
         line_of_sight_nodes.extend(
             get_nodes_within_line_of_sight(node, nodes, X, Y, Z))
 
-    updated_nodes = [
-        node for node in nodes if node not in path and node not in line_of_sight_nodes]
+    # list of tuples after getting all line of sight
+    filtered_los_nodes = []
+    for node in line_of_sight_nodes:
+        if node not in path:
+            filtered_los_nodes.append(node)
+
+    filtered_los_nodes.append(start_node)
+    filtered_los_nodes.append(goal_node)
+
+    line_of_sight_nodes = filtered_los_nodes
+
+    # for node in line_of_sight_nodes:
+    #     if node in path:
+    #         index = np.where(any(line_of_sight_nodes) ==  node)
+    #         print(index)
+    #         time.sleep(5)
+    #         print(np.delete(line_of_sight_nodes, index))
+    #         # time.sleep(5)
+    #         line_of_sight_nodes = np.delete(line_of_sight_nodes, index)
 
     # Remove duplicates and sort the line of sight nodes
     line_of_sight_nodes = sorted(list(set(line_of_sight_nodes)))
-
     # Run A* algorithm through the line of sight nodes
     # Use nodes as input instead of line_of_sight_nodes
-    try:
-        path2 = astar(start_node, goal_node, line_of_sight_nodes)
-    except:
-        pass
+
+    path2 = astar(start_node, goal_node, line_of_sight_nodes)
+
     # Extract coordinates for plotting
     x_nodes, y_nodes, z_nodes = zip(*nodes)
     x_path, y_path, z_path = zip(*path)
@@ -234,7 +250,7 @@ try:
     # Plot the node cloud and the path
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(x_nodes, y_nodes, z_nodes, color='b', label='Nodes', s=.3)
+    # ax.scatter(x_nodes, y_nodes, z_nodes, color='b', label='Nodes', s=.3)
     # Plot the line of sight nodes
     ax.scatter(x_los_nodes, y_los_nodes, z_los_nodes, color='r',
                label='Line of Sight Nodes', s=3)
