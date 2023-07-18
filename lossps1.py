@@ -10,6 +10,7 @@ from astar import astar
 import time
 from graph_network import visualize_paths
 import networkx as nx
+import random
 
 # ****************** Hyperparameters *******************************
 
@@ -17,7 +18,7 @@ z_limit = 1
 node_spacing = 1
 maximum_distance = 4
 minimum_distance = 2
-factor_of_safety = 4
+factor_of_safety = 1
 
 # ********************* Functions **********************************
 
@@ -59,15 +60,15 @@ def visualize_paths(start_node, goal_node, X, Y, Z, *paths):
     filtered_pos = {node: pos[node] for node in graph.nodes}
 
     # Draw the graph with nodes and edges
-    nx.draw_networkx(graph, filtered_pos, with_labels=False, node_size=20)
+    path_colors = [(random.random(), random.random(), random.random()) for _ in range(
+        len(paths))]  # Random colors for each path
 
-    # Highlight the paths
-    path_edges = []
-    path_colors = ['r', 'b', 'g', 'c', 'm', 'y']  # Colors for each path
     for i, path in enumerate(paths):
-        path_edges += [(path[j], path[j + 1]) for j in range(len(path) - 1)]
+        path_edges = [(path[j], path[j + 1]) for j in range(len(path) - 1)]
+        nx.draw_networkx(graph, filtered_pos, with_labels=0,
+                         node_size=20, node_color='blue')
         nx.draw_networkx_edges(graph, filtered_pos, edgelist=path_edges,
-                               edge_color=path_colors[i % len(path_colors)], width=.1)
+                               edge_color=path_colors[i], width=.1)
 
     # Highlight the start and goal nodes
     nx.draw_networkx_nodes(graph, filtered_pos, nodelist=[
@@ -75,6 +76,14 @@ def visualize_paths(start_node, goal_node, X, Y, Z, *paths):
 
     # Show the graph
     plt.show()
+
+
+# Function to generate a random RGB color
+def random_color():
+    r = random.random()
+    g = random.random()
+    b = random.random()
+    return (r, g, b)
 
 
 # Function to determine whether two nodes are within line of sight
@@ -335,7 +344,7 @@ ax.scatter(x_los_nodes, y_los_nodes, z_los_nodes, color='r',
 
 for i in range(0, len(x_paths)):
     ax.plot(x_paths[i], y_paths[i], z_paths[i],
-            color="black", linewidth=2, label=f'Path {i}')
+            color=(random.random(), random.random(), random.random()), linewidth=2, label=f'Path {i}')
 ax.scatter(*start_node, color='g', label='Start Node')
 ax.scatter(*goal_node, color='y', label='Goal Node')
 ax.set_xlabel('X')
