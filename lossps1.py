@@ -8,17 +8,76 @@ from queue import PriorityQueue
 import math
 from astar import astar
 import time
+from graph_network import visualize_paths
+import networkx as nx
+
+# ****************** Hyperparameters *******************************
 
 z_limit = 1
 node_spacing = 1
 maximum_distance = 4
 minimum_distance = 2
+factor_of_safety = 4
+
+# ********************* Functions **********************************
 
 # Helper function to calculate Euclidean distance between two nodes
 
 
 def distance(node1, node2):
     return np.linalg.norm(np.array(node1) - np.array(node2))
+
+
+# Node graph generating function
+
+
+def visualize_paths(start_node, goal_node, X, Y, Z, *paths):
+    # Create an empty graph
+    graph = nx.Graph()
+
+    # Add nodes from all paths to the graph
+    for path in paths:
+        for node in path:
+            graph.add_node(node)
+
+    # Add edges between neighboring nodes in each path
+    for path in paths:
+        for i in range(len(path) - 1):
+            graph.add_edge(path[i], path[i + 1])
+
+    # Find nodes with line of sight to each other and add edges
+    line_of_sight_nodes = set().union(*paths)  # Combine all nodes from all paths
+    for node1 in line_of_sight_nodes:
+        for node2 in line_of_sight_nodes:
+            if node1 != node2 and line_of_sight(node1, node2, X, Y, Z):
+                graph.add_edge(node1, node2)
+
+    # Set node positions for better visualization
+    pos = nx.spring_layout(graph)
+
+    # Filter pos dictionary to include nodes present in the graph
+    filtered_pos = {node: pos[node] for node in graph.nodes}
+
+    # Draw the graph with nodes and edges
+    nx.draw_networkx(graph, filtered_pos, with_labels=False, node_size=20)
+
+    # Highlight the paths
+    path_edges = []
+    path_colors = ['r', 'b', 'g', 'c', 'm', 'y']  # Colors for each path
+    for i, path in enumerate(paths):
+        path_edges += [(path[j], path[j + 1]) for j in range(len(path) - 1)]
+        nx.draw_networkx_edges(graph, filtered_pos, edgelist=path_edges,
+                               edge_color=path_colors[i % len(path_colors)], width=.1)
+
+    # Highlight the start and goal nodes
+    nx.draw_networkx_nodes(graph, filtered_pos, nodelist=[
+                           start_node, goal_node], node_color='g', node_size=300)
+
+    # Show the graph
+    plt.show()
+
+
+# Function to determine whether two nodes are within line of sight
 
 
 def line_of_sight(node1, node2, X, Y, Z):
@@ -57,8 +116,11 @@ def line_of_sight(node1, node2, X, Y, Z):
 
     return True
 
+# Function to determine all nodes within line of sight of a given node
+
 
 def get_nodes_within_line_of_sight(node, nodes, X, Y, Z, original_path=None):
+
     visible_nodes = []
 
     for other_node in nodes:
@@ -74,68 +136,13 @@ def get_nodes_within_line_of_sight(node, nodes, X, Y, Z, original_path=None):
 
     return visible_nodes
 
+# Function to get the z coordinate of the mountain surface for a given (x, y)
+
 
 def get_mountain_surface_z(x, y, scale=6, octaves=100, persistence=0.5):
     return pnoise2(x / scale, y / scale, octaves=octaves, persistence=persistence)
 
-
-# Generate data
-x = np.arange(-10, 10, node_spacing)  # X coordinates
-y = np.arange(-10, 10, node_spacing)  # Y coordinates
-X, Y = np.meshgrid(x, y)  # Create a grid of X, Y coordinates
-
-# Define the mountain-like surface using Perlin noise
-Z = np.zeros_like(X)
-for i in range(len(x)):
-    for j in range(len(y)):
-        Z[i, j] = get_mountain_surface_z(X[i, j], Y[i, j]) * 8
-
-# Define the colormap for the terrain
-colors = [
-    (0.0, 'green'),   # Bottoms (green)
-    (1.0, 'black')    # Mountains (brown)
-]
-cmap = LinearSegmentedColormap.from_list('terrain', colors)
-
-# Generate node cloud
-nodes = [(x, y, z) for x in np.arange(-11, 11, node_spacing)
-         for y in np.arange(-11, 11, node_spacing)
-         for z in np.arange(-11, 11, node_spacing)
-         if z >= get_mountain_surface_z(x, y)]
-nodes = [node for node in nodes if node[2] <= z_limit]
-
-# Check if there are any nodes available
-if not nodes:
-    raise ValueError("No nodes available with the specified spacing.")
-
-# Define start and goal nodes
-start_node = (-8, 8, 1)
-goal_node = (7, -6, 1)
-
-# Check if start node falls below the mountain surface
-if start_node[2] < get_mountain_surface_z(start_node[0], start_node[1]):
-    raise ValueError("Start node falls below the mountain surface.")
-
-# Check if goal node falls below the mountain surface
-if goal_node[2] < get_mountain_surface_z(goal_node[0], goal_node[1]):
-    raise ValueError("Goal node falls below the mountain surface.")
-
-# Check if start node is above Z limit
-if start_node[2] > z_limit:
-    raise ValueError("Start node is above the Z limit.")
-
-# Check if goal node is above Z limit
-if goal_node[2] > z_limit:
-    raise ValueError("Goal node is above the Z limit.")
-
-# Check line of sight between start and goal nodes
-los = line_of_sight(start_node, goal_node, X, Y, Z)
-if los:
-    print("There is line of sight between the start and goal nodes.")
-else:
-    print("The mountain obstructs the line of sight between the start and goal nodes.")
-
-# A* algorithm for path finding
+# A* algorithm
 
 
 def astar(start, goal, input_nodes):
@@ -186,8 +193,9 @@ def astar(start, goal, input_nodes):
 
     return path
 
-
 # Helper function to get valid neighbors for a node
+
+
 def get_neighbors(node, input_nodes):
     x, y, z = node
     neighbors = []
@@ -200,83 +208,150 @@ def get_neighbors(node, input_nodes):
                     if new_node in input_nodes:
                         neighbors.append(new_node)
     return neighbors
+# ****************************** End of functions ******************************
 
 
 try:
-    # Run A* algorithm
-    path = astar(start_node, goal_node, nodes)
-    # Get nodes within line of sight of the path
-    line_of_sight_nodes = []
-    for node in path:
-        line_of_sight_nodes.extend(
-            get_nodes_within_line_of_sight(node, nodes, X, Y, Z))
+    # Generate data
+    x = np.arange(-10, 10, node_spacing)  # X coordinates
+    y = np.arange(-10, 10, node_spacing)  # Y coordinates
+    X, Y = np.meshgrid(x, y)  # Create a grid of X, Y coordinates
 
-    # list of tuples after getting all line of sight
+    # Define the mountain-like surface using Perlin noise
+    Z = np.zeros_like(X)
+    for i in range(len(x)):
+        for j in range(len(y)):
+            Z[i, j] = get_mountain_surface_z(X[i, j], Y[i, j]) * 8
+
+    # Define the colormap for the terrain
+    colors = [
+        (0.0, '#8a4d22'),   # Bottoms (green)
+        (1.0, '#3cde67')    # Mountains (brown)
+    ]
+    cmap = LinearSegmentedColormap.from_list('terrain', colors)
+
+    # Generate node cloud
+    nodes = [(x, y, z) for x in np.arange(-11, 11, node_spacing)
+             for y in np.arange(-11, 11, node_spacing)
+             for z in np.arange(-11, 11, node_spacing)
+             if z >= get_mountain_surface_z(x, y)]
+    nodes = [node for node in nodes if node[2] <= z_limit]
+
+    # Check if there are any nodes available
+    if not nodes:
+        raise ValueError("No nodes available with the specified spacing.")
+
+    # Define start and goal nodes
+    start_node = (-8, 8, 1)
+    goal_node = (6, -6, 0)
+
+    # Check if start node falls below the mountain surface
+    if start_node[2] < get_mountain_surface_z(start_node[0], start_node[1]):
+        raise ValueError("Start node falls below the mountain surface.")
+
+    # Check if goal node falls below the mountain surface
+    if goal_node[2] < get_mountain_surface_z(goal_node[0], goal_node[1]):
+        raise ValueError("Goal node falls below the mountain surface.")
+
+    # Check if start node is above Z limit
+    if start_node[2] > z_limit:
+        raise ValueError("Start node is above the Z limit.")
+
+    # Check if goal node is above Z limit
+    if goal_node[2] > z_limit:
+        raise ValueError("Goal node is above the Z limit.")
+
+    # Check line of sight between start and goal nodes
+    los = line_of_sight(start_node, goal_node, X, Y, Z)
+    if los:
+        print("There is line of sight between the start and goal nodes.")
+    else:
+        print("The mountain obstructs the line of sight between the start and goal nodes.")
+
+    original_nodes = nodes.copy()
+    paths_found = []
     filtered_los_nodes = []
-    for node in line_of_sight_nodes:
-        if node not in path:
-            filtered_los_nodes.append(node)
+    for i in range(factor_of_safety):
+        path = astar(start_node, goal_node, nodes)
+        paths_found.append(path.copy())
 
-    filtered_los_nodes.append(start_node)
-    filtered_los_nodes.append(goal_node)
+        # Get nodes within line of sight of the path
+        line_of_sight_nodes = []
+        for path in paths_found:
+            for node in path:
+                line_of_sight_nodes.extend(get_nodes_within_line_of_sight(
+                    node, original_nodes, X, Y, Z, original_path=path))
 
-    line_of_sight_nodes = filtered_los_nodes
+        # Add line of sight nodes to a temporary list
+        forbidden_nodes = []
+        for path in paths_found:
+            for node in path:
+                forbidden_nodes.append(node)
+        forbidden_nodes = sorted(list(set(forbidden_nodes)))
+        temp_filtered_nodes = []
+        for node in line_of_sight_nodes:
+            if node not in forbidden_nodes:
+                temp_filtered_nodes.append(node)
 
-    # for node in line_of_sight_nodes:
-    #     if node in path:
-    #         index = np.where(any(line_of_sight_nodes) ==  node)
-    #         print(index)
-    #         time.sleep(5)
-    #         print(np.delete(line_of_sight_nodes, index))
-    #         # time.sleep(5)
-    #         line_of_sight_nodes = np.delete(line_of_sight_nodes, index)
+        # Remove nodes from filtered_los_nodes that are present in temp_filtered_nodes
+        filtered_los_nodes = [
+            node for node in filtered_los_nodes if node not in forbidden_nodes]
 
-    # Remove duplicates and sort the line of sight nodes
-    line_of_sight_nodes = sorted(list(set(line_of_sight_nodes)))
-    # Run A* algorithm through the line of sight nodes
-    # Use nodes as input instead of line_of_sight_nodes
+        # Append temp_filtered_nodes to filtered_los_nodes
+        filtered_los_nodes.extend(temp_filtered_nodes)
 
-    path2 = astar(start_node, goal_node, line_of_sight_nodes)
+        # Append start and goal nodes to filtered_los_nodes
+        filtered_los_nodes.append(start_node)
+        filtered_los_nodes.append(goal_node)
 
-    # Extract coordinates for plotting
-    x_nodes, y_nodes, z_nodes = zip(*nodes)
-    x_path, y_path, z_path = zip(*path)
-    x_los_nodes, y_los_nodes, z_los_nodes = zip(*line_of_sight_nodes)
-    try:
-        x_final_path, y_final_path, z_final_path = zip(*path2)
-    except:
-        pass
+        # Update nodes for the next path calculation
+        nodes = filtered_los_nodes.copy()
 
-    # Plot the node cloud and the path
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    # ax.scatter(x_nodes, y_nodes, z_nodes, color='b', label='Nodes', s=.3)
-    # Plot the line of sight nodes
-    ax.scatter(x_los_nodes, y_los_nodes, z_los_nodes, color='r',
-               label='Line of Sight Nodes', s=3)
-    ax.plot(x_path, y_path, z_path, color='black', linewidth=2, label='Path')
-    try:
-        ax.plot(x_final_path, y_final_path, z_final_path,
-                color='orange', linewidth=2, label='Final Path')
-    except:
-        pass
-    ax.scatter(*start_node, color='g', label='Start Node')
-    ax.scatter(*goal_node, color='y', label='Goal Node')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.legend()
-    ax.plot_surface(X, Y, Z, cmap=cmap)
+        filtered_los_nodes = sorted(list(set(filtered_los_nodes)))
 
-    # Show the plot
-    plt.show()
+except:
+    print("No suitable configuration was found")
 
-    # Print the path
-    print("Path:")
+x_nodes, y_nodes, z_nodes = zip(*original_nodes)
+x_los_nodes, y_los_nodes, z_los_nodes = zip(*filtered_los_nodes)
+x_paths = []
+y_paths = []
+z_paths = []
+
+for path in paths_found:
+    x_temp_nodes, y_temp_nodes, z_temp_nodes = zip(*path)
+    x_paths.append(x_temp_nodes)
+    y_paths.append(y_temp_nodes)
+    z_paths.append(z_temp_nodes)
+
+
+# Plot the node cloud and the path
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(x_nodes, y_nodes, z_nodes, color='b', label='Nodes', s=.3)
+# Plot the line of sight nodes
+ax.scatter(x_los_nodes, y_los_nodes, z_los_nodes, color='r',
+           label='Line of Sight Nodes', s=3)
+
+for i in range(0, len(x_paths)):
+    ax.plot(x_paths[i], y_paths[i], z_paths[i],
+            color="black", linewidth=2, label=f'Path {i}')
+ax.scatter(*start_node, color='g', label='Start Node')
+ax.scatter(*goal_node, color='y', label='Goal Node')
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+# ax.legend()
+# ax.plot_surface(X, Y, Z, cmap=cmap)
+plt.savefig("mountain_graph-1.jpg")
+
+# Show the plot
+plt.show()
+visualize_paths(start_node, goal_node, X, Y, Z, *paths_found)
+
+# Print the path
+print("Paths:")
+for path in paths_found:
     for node in path:
         print(node)
-    print("Second Path:")
-    for node in path2:
-        print(node)
-except ValueError as e:
-    print("Error:", str(e))
+    print("********************************************")
